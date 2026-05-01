@@ -17,6 +17,7 @@ import (
 	"gtm-mcp-server/middleware"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -93,6 +94,25 @@ func main() {
 	// RFC 8414: Authorization Server Metadata - tells clients about OAuth endpoints
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", auth.MetadataHandler(cfg.BaseURL, urlResolver))
 
+	// Service account S2S mode (runs alongside OAuth when both are configured)
+	var saTokenSource oauth2.TokenSource
+	if cfg.ServiceAccountAPIKey != "" {
+		var saErr error
+		saTokenSource, saErr = auth.NewServiceAccountTokenSource(context.Background(), cfg.ServiceAccountKeyJSON)
+		if saErr != nil {
+			logger.Error("s2s_mode_failed",
+				"error", saErr,
+				"hint", "set GOOGLE_SERVICE_ACCOUNT_KEY_JSON or deploy on GCP for Workload Identity",
+			)
+			os.Exit(1)
+		}
+		credSource := "workload_identity"
+		if cfg.ServiceAccountKeyJSON != "" {
+			credSource = "key_json"
+		}
+		logger.Info("s2s_mode_enabled", "credential_source", credSource)
+	}
+
 	// Check if OAuth is configured
 	var authServer *auth.Server
 	var tokenStore auth.TokenStore
@@ -120,7 +140,7 @@ func main() {
 
 		// MCP endpoint with REQUIRED auth middleware and body size limit
 		// Returns 401 if no valid Bearer token - triggers Claude's OAuth flow
-		authMiddleware := auth.Middleware(tokenStore, googleProvider, logger, cfg.BaseURL, cfg.AccessTokenTTL, urlResolver, nil, "")
+		authMiddleware := auth.Middleware(tokenStore, googleProvider, logger, cfg.BaseURL, cfg.AccessTokenTTL, urlResolver, saTokenSource, cfg.ServiceAccountAPIKey)
 		mux.Handle("/", authMiddleware(maxBytesHandler(5<<20, mcpHandler)))
 
 		logger.Info("OAuth configured",
