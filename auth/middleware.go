@@ -30,7 +30,7 @@ const (
 // If a token is expired but has a valid refresh token, it will automatically
 // refresh the token and continue the request transparently.
 // If resolver is non-nil, 401 responses will use dynamically resolved URLs.
-func Middleware(store TokenStore, google *GoogleProvider, logger *slog.Logger, baseURL string, accessTokenTTL time.Duration, resolver *URLResolver) func(http.Handler) http.Handler {
+func Middleware(store TokenStore, google *GoogleProvider, logger *slog.Logger, baseURL string, accessTokenTTL time.Duration, resolver *URLResolver, saTokenSource oauth2.TokenSource, apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Resolve the base URL for error responses
@@ -55,6 +55,19 @@ func Middleware(store TokenStore, google *GoogleProvider, logger *slog.Logger, b
 			}
 
 			accessToken := parts[1]
+
+			// S2S mode: if bearer token matches the configured API key, use the
+			// shared service account token source and skip the per-user token store.
+			if saTokenSource != nil && accessToken == apiKey {
+				ctx := context.WithValue(r.Context(), SATokenSourceKey, saTokenSource)
+				ctx = context.WithValue(ctx, TokenInfoKey, &TokenInfo{
+					ClientID:  "service-account",
+					CreatedAt: time.Now(),
+				})
+				logger.Debug("authenticated request", "client_id", "service-account", "auth_mode", "s2s")
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 
 			// Look up the token
 			tokenInfo, err := store.GetTokenByAccess(accessToken)
@@ -81,6 +94,7 @@ func Middleware(store TokenStore, google *GoogleProvider, logger *slog.Logger, b
 
 			logger.Debug("authenticated request",
 				"client_id", tokenInfo.ClientID,
+				"auth_mode", "oauth",
 			)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
