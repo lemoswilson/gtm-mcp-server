@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"golang.org/x/oauth2"
@@ -15,6 +16,12 @@ const SATokenSourceKey ContextKey = "sa_token_source"
 // Otherwise Application Default Credentials are used (Workload Identity on GCP).
 func NewServiceAccountTokenSource(ctx context.Context, keyJSON string) (oauth2.TokenSource, error) {
 	if keyJSON != "" {
+		// Validate JSON structure before using it
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(keyJSON), &config); err != nil {
+			return nil, fmt.Errorf("invalid GOOGLE_SERVICE_ACCOUNT_KEY_JSON: %w", err)
+		}
+
 		creds, err := google.CredentialsFromJSON(ctx, []byte(keyJSON), GoogleScopes...)
 		if err != nil {
 			return nil, fmt.Errorf("invalid GOOGLE_SERVICE_ACCOUNT_KEY_JSON: %w", err)
