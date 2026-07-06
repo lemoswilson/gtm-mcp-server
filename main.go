@@ -179,8 +179,18 @@ func main() {
 		mux.HandleFunc("POST /token", oauthLimiter.MiddlewareFunc(oauthNotConfiguredHandler))
 		mux.HandleFunc("POST /register", registerLimiter.MiddlewareFunc(oauthNotConfiguredHandler))
 
-		// MCP endpoint without auth (still apply body size limit)
-		mux.Handle("/", maxBytesHandler(5<<20, mcpHandler))
+		// S2S-only mode: SERVICE_ACCOUNT_API_KEY is set but OAuth is not configured.
+		// Register the auth middleware so the API key is still enforced.
+		// Empty token store means all non-S2S bearer tokens get 401; google=nil is safe
+		// because no OAuth tokens exist in the store to trigger the refresh path.
+		if saTokenSource != nil {
+			authMiddleware := auth.Middleware(auth.NewMemoryTokenStore(), nil, logger, cfg.BaseURL, cfg.AccessTokenTTL, urlResolver, saTokenSource, cfg.ServiceAccountAPIKey)
+			mux.Handle("/", authMiddleware(maxBytesHandler(5<<20, mcpHandler)))
+			logger.Info("s2s_only_mode_enabled", "hint", "OAuth not configured; only SERVICE_ACCOUNT_API_KEY requests accepted")
+		} else {
+			// MCP endpoint without auth (still apply body size limit)
+			mux.Handle("/", maxBytesHandler(5<<20, mcpHandler))
+		}
 	}
 
 	// Create HTTP server

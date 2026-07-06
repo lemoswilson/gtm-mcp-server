@@ -76,6 +76,11 @@ func Middleware(store TokenStore, google *GoogleProvider, logger *slog.Logger, b
 			if err != nil {
 				if err == ErrTokenExpired {
 					// Attempt auto-refresh
+					// ponytail: google is nil in S2S-only mode; no OAuth tokens exist so this path is unreachable in practice, but guard anyway
+					if google == nil {
+						unauthorized(w, effectiveURL, "Token expired")
+						return
+					}
 					tokenInfo, err = tryAutoRefresh(r.Context(), store, google, logger, accessToken, baseURL, accessTokenTTL)
 					if err != nil {
 						unauthorized(w, effectiveURL, err.Error())
