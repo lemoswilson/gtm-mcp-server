@@ -1,0 +1,34 @@
+*.example
+go-sdk-main/
+*.md
+.env
+.env.deploy
+gtm-key.json
+!README.md
+!ARCHITECTURE.md
+!skills/**/*.md
+.env.local
+.*/
+!.github/
+!.goreleaser.yaml
+
+# Local docs / specs
+/docs/
+
+# Build artifacts
+dist/
+
+# Binary
+gtm-mcp-server
+
+# Deployment
+deploy.sh
+Caddyfile
+docker-compose.yml
+
+# Swap files
+*.swp
+*.swo
+
+# MCP Registry tokens
+.mcpregistry_*
